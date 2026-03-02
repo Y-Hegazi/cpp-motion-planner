@@ -25,9 +25,9 @@ namespace motion_planner{
             Grid(int width, int height);
             void setObstacle(int x, int y);
             void clearCell(int x, int y);
-            bool isObstacle(int x, int y) const;
-            bool isValid(int x, int y) const;
-            std::vector<Point2D> getFreeNeighbors(int x, int y, bool eight_connected = false) const;
+            [[nodiscard]] bool isObstacle(int x, int y) const;
+            [[nodiscard]] bool isValid(int x, int y) const;
+            [[nodiscard]] std::vector<Point2D> getFreeNeighbors(int x, int y, bool eight_connected = false) const;
             void randomize(double obstacle_density, unsigned seed = 0);
             [[nodiscard]] int width() const {return width_ ;}
             [[nodiscard]] int height() const {return height_ ;}
