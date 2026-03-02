@@ -15,7 +15,7 @@ src/rrt.cpp)
 
 target_include_directories(motion_planner_lib PUBLIC include/)
 
-target_link_libraries(motion_planner_lib PRIVATE ${OpenCV_LIBS})
+target_link_libraries(motion_planner_lib PUBLIC ${OpenCV_LIBS})
 
 add_executable(motion_planner src/main.cpp)
 target_link_libraries(motion_planner PRIVATE motion_planner_lib)
