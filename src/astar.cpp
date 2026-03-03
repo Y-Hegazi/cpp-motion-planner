@@ -1,92 +1,95 @@
+/**
+ * @file astar.cpp
+ * @brief A* implementation with IndexedPriorityQueue for O(E log V) performance.
+ */
 #include "motion_planner/astar.hpp"
 #include "motion_planner/indexed_priority_queue.hpp"
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace motion_planner {
 
-AStar::AStar(const Grid& grid, Heuristic h) : grid_(grid), heuristic_(h) {}
+AStar::AStar(const Grid& grid, Heuristic h)
+    : grid_(grid), heuristic_(h) {}
 
 PlanResult AStar::plan(Point2D start, Point2D goal) const {
     PlanResult result;
-    result.success = false;
 
     if (!grid_.isValid(start.x, start.y) || !grid_.isValid(goal.x, goal.y))
         return result;
     if (grid_.isObstacle(start.x, start.y) || grid_.isObstacle(goal.x, goal.y))
         return result;
 
-    int total_cells = grid_.width() * grid_.height();
-    int start_idx = grid_.getIndex(start.x, start.y);
-    int goal_idx  = grid_.getIndex(goal.x, goal.y);
+    const int total = grid_.width() * grid_.height();
+    const int start_idx = grid_.getIndex(start.x, start.y);
+    const int goal_idx  = grid_.getIndex(goal.x, goal.y);
 
-    std::vector<double> g_score(total_cells, std::numeric_limits<double>::infinity());
-    std::vector<int>    came_from(total_cells, -1);
+    // Flat 1D arrays indexed by cell index for cache-friendly access
+    std::vector<double> g(total, std::numeric_limits<double>::infinity());
+    std::vector<int>    parent(total, -1);
 
-    IndexedPriorityQueue open_set(total_cells);
+    IndexedPriorityQueue open(total);
+    g[start_idx] = 0.0;
+    open.push(start_idx, computeH(start, goal));
 
-    g_score[start_idx] = 0.0;
-    open_set.push(start_idx, computeH(start, goal));
+    while (!open.empty()) {
+        const int cur = open.pop();
 
-    while (!open_set.empty()) {
-        int current_idx = open_set.pop();
-        Point2D current = grid_.getCoords(current_idx);
-
-        // Goal reached — reconstruct path
-        if (current_idx == goal_idx) {
+        if (cur == goal_idx) {
             result.success = true;
-            result.cost = g_score[current_idx];
+            result.cost = g[cur];
 
+            // Reconstruct path from goal back to start
             std::vector<Point2D> path;
-            int curr = current_idx;
-            while (curr != -1) {
-                path.push_back(grid_.getCoords(curr));
-                curr = came_from[curr];
-            }
+            for (int c = cur; c != -1; c = parent[c])
+                path.push_back(grid_.getCoords(c));
             std::reverse(path.begin(), path.end());
-            result.path = path;
+            result.path = std::move(path);
             return result;
         }
 
-        // Expand neighbors
-        for (const auto& neighbor : grid_.getFreeNeighbors(current.x, current.y, true)) {
-            int neighbor_idx = grid_.getIndex(neighbor.x, neighbor.y);
+        const Point2D cur_pt = grid_.getCoords(cur);
 
-            int dx = std::abs(neighbor.x - current.x);
-            int dy = std::abs(neighbor.y - current.y);
-            double step_cost = (dx + dy == 2) ? std::sqrt(2.0) : 1.0;
-            double new_g = g_score[current_idx] + step_cost;
+        for (const auto& nb : grid_.getFreeNeighbors(cur_pt.x, cur_pt.y, true)) {
+            const int nb_idx = grid_.getIndex(nb.x, nb.y);
 
-            if (new_g < g_score[neighbor_idx]) {
-                g_score[neighbor_idx] = new_g;
-                came_from[neighbor_idx] = current_idx;
-                double f = new_g + computeH(neighbor, goal);
+            // Diagonal moves cost √2, orthogonal moves cost 1
+            const int dx = std::abs(nb.x - cur_pt.x);
+            const int dy = std::abs(nb.y - cur_pt.y);
+            const double step = (dx + dy == 2) ? std::sqrt(2.0) : 1.0;
+            const double new_g = g[cur] + step;
 
-                if (open_set.contains(neighbor_idx))
-                    open_set.decreaseKey(neighbor_idx, f);
+            if (new_g < g[nb_idx]) {
+                g[nb_idx] = new_g;
+                parent[nb_idx] = cur;
+                const double f = new_g + computeH(nb, goal);
+
+                if (open.contains(nb_idx))
+                    open.decreaseKey(nb_idx, f);  // O(log n) — IPQ advantage
                 else
-                    open_set.push(neighbor_idx, f);
+                    open.push(nb_idx, f);
             }
         }
     }
 
-    return result;
+    return result;  // No path found
 }
 
 double AStar::computeH(Point2D a, Point2D b) const {
+    const int dx = std::abs(a.x - b.x);
+    const int dy = std::abs(a.y - b.y);
+
     switch (heuristic_) {
         case Heuristic::MANHATTAN:
-            return std::abs(a.x - b.x) + std::abs(a.y - b.y);
+            return dx + dy;
         case Heuristic::EUCLIDEAN:
-            return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
-        case Heuristic::DIAGONAL: {
-            int dx = std::abs(a.x - b.x);
-            int dy = std::abs(a.y - b.y);
+            return std::sqrt(dx * dx + dy * dy);  // dx*dx avoids slow std::pow
+        case Heuristic::DIAGONAL:
+            // Octile distance — admissible for 8-connected grids
             return std::max(dx, dy) + (std::sqrt(2.0) - 1.0) * std::min(dx, dy);
-        }
     }
     return 0.0;
 }
 
-}
+} // namespace motion_planner
